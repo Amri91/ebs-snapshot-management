@@ -1,0 +1,26 @@
+{
+  "name": "aws-ebs-snapshot-management",
+  "version": "1.0.0",
+  "description": "AWS Lambda code for EBS snapshot management.",
+  "main": "index.js",
+  "scripts": {
+    "startTestEnv": "docker network disconnect -f bridge my-localstack || true && docker rm -f my-localstack || true && docker run -d --name my-localstack --rm -p 4566:4566 -p 4571:4571 -e SERVICES=ec2,sts localstack/localstack",
+    "stopTestEnv": "docker rm -f my-localstack",
+    "test": "jest"
+  },
+  "author": "Abdulrahman Alamri",
+  "license": "ISC",
+  "devDependencies": {
+    "@aws-sdk/client-ec2": "^3.7.0",
+    "aws-sdk": "^2.855.0",
+    "aws-sdk-mock": "^5.1.0",
+    "dockerode": "^3.2.1",
+    "jest": "^26.6.3"
+  },
+  "dependencies": {
+    "fluture": "^13.0.1",
+    "fluture-retry": "^3.0.0",
+    "fluture-sanctuary-types": "^7.0.1",
+    "sanctuary": "^3.1.0"
+  }
+}

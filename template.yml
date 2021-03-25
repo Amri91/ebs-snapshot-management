@@ -1,0 +1,120 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+
+Parameters:
+  ActiveTagName:
+    Description: "The tag key DLM uses to monitor EBS volumes."
+    Type: String
+    Default: "SnapshotMaintainer"
+  ActiveTagValue:
+    Description: "The tag value DLM uses to monitor EBS volumes."
+    Type: String
+    Default: "DLM"
+  RuleCronExpression:
+    Description: "When to run the rule."
+    Type: String
+    Default: "cron(0 12 * * ? *)"
+  SnapshotMaxCount:
+    Description: "How many snapshots to keep."
+    Type: Number
+    Default: 5
+  NonStandardSnapshotRetentionPeriod:
+    Description: "How many days to before deleting the non-standard snapshots."
+    Type: Number
+    Default: 10
+
+Resources:
+  #  LAMBDA
+  LAMBDAROLE:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      Policies:
+        - PolicyName: lambda-policy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "ec2:CreateTags"
+                  - "ec2:DescribeVolumes"
+                  - "ec2:DescribeSnapshots"
+                  - "ec2:DeleteSnapshot"
+                  - "sts:GetCallerIdentity"
+                Resource: '*'
+  DLMHELPER:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: "index.handler"
+      CodeUri: "./lambda"
+      Role: !GetAtt LAMBDAROLE.Arn
+      Runtime: "nodejs14.x"
+      Timeout: 60
+      Events:
+        CWSchedule:
+          Type: Schedule
+          Properties:
+            Schedule: 'rate(1 day)'
+      Environment:
+        Variables:
+          TAG_NAME: !Ref ActiveTagName
+          TAG_VALUE: !Ref ActiveTagValue
+          RETENTION_PERIOD: !Ref NonStandardSnapshotRetentionPeriod
+          NODE_ENV: 'production'
+
+  # DLM
+  DLMROLE:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - dlm.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      Policies:
+          - PolicyName: dlm-policy
+            PolicyDocument:
+              Version: "2012-10-17"
+              Statement:
+                - Effect: Allow
+                  Action:
+                    - "ec2:CreateSnapshot"
+                    - "ec2:DeleteSnapshot"
+                    - "ec2:DescribeVolumes"
+                    - "ec2:DescribeSnapshots"
+                    - "ec2:CreateTags"
+                  Resource: '*'
+  DLM:
+    Type: AWS::DLM::LifecyclePolicy
+    Properties:
+      Description: "Snapshots maintainer"
+      ExecutionRoleArn: !GetAtt DLMROLE.Arn
+      PolicyDetails:
+        PolicyType: 'EBS_SNAPSHOT_MANAGEMENT'
+        ResourceTypes:
+          - "VOLUME"
+        Schedules:
+          - Name: !Sub "Maintains ${SnapshotMaxCount} snapshots per tracked volume"
+            CopyTags: true
+            CreateRule:
+              CronExpression: !Ref RuleCronExpression
+            RetainRule:
+              Count: !Ref SnapshotMaxCount
+        TargetTags:
+          - Key: !Ref ActiveTagName
+            Value: !Ref ActiveTagValue
+      State: "ENABLED"
